@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="1340" viewBox="0 0 1640 1340">
+  <defs>
+    <style>
+      .bg { fill: #f5f6f2; }
+      .title { font: 700 30px 'DejaVu Sans', sans-serif; fill: #1a2732; }
+      .subtitle { font: 400 15px 'DejaVu Sans', sans-serif; fill: #51606d; }
+      .panel { fill: #ffffff; stroke: #cfd8e1; stroke-width: 2; rx: 22; ry: 22; }
+      .panel-title { font: 700 18px 'DejaVu Sans', sans-serif; fill: #233240; }
+      .box-text { font: 700 16px 'DejaVu Sans', sans-serif; fill: #11222d; }
+      .small { font: 400 13px 'DejaVu Sans', sans-serif; fill: #324857; }
+      .foot { font: 400 12px 'DejaVu Sans', sans-serif; fill: #566a79; }
+      .cfg { fill: #e7f0ff; stroke: #5c8fc7; stroke-width: 2; rx: 18; ry: 18; }
+      .state { fill: #f0e8ff; stroke: #816bb8; stroke-width: 2; rx: 18; ry: 18; }
+      .cb { fill: #e7f6e4; stroke: #5f9a57; stroke-width: 2; rx: 18; ry: 18; }
+      .logic { fill: #fff3ca; stroke: #b6902f; stroke-width: 2; rx: 18; ry: 18; }
+      .out { fill: #ffe7da; stroke: #c56d42; stroke-width: 2; rx: 18; ry: 18; }
+      .link { stroke: #506270; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 8 8; }
+      .thin { stroke-width: 2; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#506270"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1640" height="1340"/>
+
+  <text class="title" x="48" y="56">reprojection_fusion_node methodology</text>
+  <text class="subtitle" x="48" y="84">Node-only view of asynchronous inputs, internal pairing/cache logic, LiDAR-triggered projection, filtering, and output publishing.</text>
+
+  <rect class="panel" x="28" y="110" width="360" height="1160"/>
+  <rect class="panel" x="410" y="110" width="360" height="1160"/>
+  <rect class="panel" x="792" y="110" width="470" height="1160"/>
+  <rect class="panel" x="1284" y="110" width="328" height="1160"/>
+
+  <text class="panel-title" x="56" y="146">Config and State</text>
+  <text class="panel-title" x="438" y="146">Async Callbacks</text>
+  <text class="panel-title" x="820" y="146">LiDAR Triggered Main Path</text>
+  <text class="panel-title" x="1312" y="146">Outputs</text>
+
+  <rect class="cfg" x="58" y="182" width="300" height="212"/>
+  <text class="box-text" x="80" y="212">ExtractorConfig essentials</text>
+  <text class="small" x="80" y="240">input cloud: /lidar/accumulated</text>
+  <text class="small" x="80" y="262">YOLO topics: detections2d, instance_mask</text>
+  <text class="small" x="80" y="284">camera_info, odom, tracking_frame</text>
+  <text class="small" x="80" y="306">freshness limits + pair slop</text>
+  <text class="small" x="80" y="328">projection depth/range thresholds</text>
+  <text class="small" x="80" y="350">3D size limits + percentile window</text>
+  <text class="small" x="80" y="372">foreground refine + publish flags</text>
+
+  <rect class="state" x="58" y="424" width="300" height="180"/>
+  <text class="box-text" x="80" y="454">Persistent caches</text>
+  <text class="small" x="80" y="482">cache_.camera_info</text>
+  <text class="small" x="80" y="504">cache_.odom</text>
+  <text class="small" x="80" y="526">pending_detections2d_ deque</text>
+  <text class="small" x="80" y="548">pending_instance_masks_ deque</text>
+  <text class="small" x="80" y="570">paired_yolo_frames_ deque</text>
+  <text class="small" x="80" y="592">tf_buffer_ + tf_listener_</text>
+
+  <rect class="state" x="58" y="634" width="300" height="182"/>
+  <text class="box-text" x="80" y="664">Optional extrinsic fallback</text>
+  <text class="small" x="80" y="692">loadOptionalExtrinsicFallback()</text>
+  <text class="small" x="80" y="714">reads 4x4 matrix from extrinsic_path</text>
+  <text class="small" x="80" y="736">stores t_extrinsic_lidar_to_camera_</text>
+  <text class="small" x="80" y="758">used only if TF lookup fails and</text>
+  <text class="small" x="80" y="780">camera/cloud frames match fallback rules</text>
+  <text class="small" x="80" y="802">otherwise disabled safely</text>
+
+  <rect class="cfg" x="58" y="848" width="300" height="192"/>
+  <text class="box-text" x="80" y="878">Internal data objects</text>
+  <text class="small" x="80" y="906">Detection2dCandidate = instance id + score + bbox</text>
+  <text class="small" x="80" y="928">InstanceBucket = one instance's 3D points</text>
+  <text class="small" x="80" y="950">YoloFramePair = detection frame + mask frame + stamps</text>
+  <text class="small" x="80" y="972">InstanceDetection = center + size + score + point_count</text>
+  <text class="small" x="80" y="994">These types define the node's whole flow</text>
+
+  <rect class="cb" x="438" y="188" width="304" height="126"/>
+  <text class="box-text" x="460" y="218">detections2dCallback()</text>
+  <text class="small" x="460" y="246">push Detection2DArray into pending queue</text>
+  <text class="small" x="460" y="268">trim queue length</text>
+  <text class="small" x="460" y="290">tryPairPendingYoloFrames()</text>
+
+  <rect class="cb" x="438" y="344" width="304" height="126"/>
+  <text class="box-text" x="460" y="374">instanceMaskCallback()</text>
+  <text class="small" x="460" y="402">push mono16 instance mask into pending queue</text>
+  <text class="small" x="460" y="424">trim queue length</text>
+  <text class="small" x="460" y="446">tryPairPendingYoloFrames()</text>
+
+  <rect class="logic" x="438" y="500" width="304" height="246"/>
+  <text class="box-text" x="460" y="530">tryPairPendingYoloFrames()</text>
+  <text class="small" x="460" y="558">Search all pending detection/mask combinations</text>
+  <text class="small" x="460" y="580">Accept only pairs within max_yolo_pair_slop_sec</text>
+  <text class="small" x="460" y="602">Prefer smaller time delta</text>
+  <text class="small" x="460" y="624">Tie-break with newer reference stamp</text>
+  <text class="small" x="460" y="646">Emit YoloFramePair into paired_yolo_frames_</text>
+  <text class="small" x="460" y="668">Erase consumed queue prefixes</text>
+  <text class="small" x="460" y="690">Warn if no valid pair forms yet</text>
+  <text class="small" x="460" y="712">This exists because instance ids are frame-local</text>
+
+  <rect class="cb" x="438" y="778" width="304" height="112"/>
+  <text class="box-text" x="460" y="808">cameraInfoCallback()</text>
+  <text class="small" x="460" y="836">cache latest CameraInfo only</text>
+  <text class="small" x="460" y="858">no heavy processing here</text>
+
+  <rect class="cb" x="438" y="920" width="304" height="112"/>
+  <text class="box-text" x="460" y="950">odomCallback()</text>
+  <text class="small" x="460" y="978">cache latest Odometry only</text>
+  <text class="small" x="460" y="1000">used later for output message copy</text>
+
+  <rect class="logic" x="438" y="1062" width="304" height="170"/>
+  <text class="box-text" x="460" y="1092">Important structural consequence</text>
+  <text class="small" x="460" y="1120">Image and mask callbacks never publish detections</text>
+  <text class="small" x="460" y="1142">They only update queues/caches</text>
+  <text class="small" x="460" y="1164">Actual extraction is triggered only by lidarCallback()</text>
+  <text class="small" x="460" y="1186">So the node is camera-guided but LiDAR-triggered</text>
+
+  <rect class="logic" x="822" y="182" width="410" height="126"/>
+  <text class="box-text" x="846" y="212">1. lidarCallback()</text>
+  <text class="small" x="846" y="240">Set output frame and stamp from input cloud</text>
+  <text class="small" x="846" y="262">Call processCloud()</text>
+  <text class="small" x="846" y="284">Optionally skip empty publishes</text>
+
+  <rect class="logic" x="822" y="338" width="410" height="158"/>
+  <text class="box-text" x="846" y="368">2. processCloud() preconditions</text>
+  <text class="small" x="846" y="396">Reject empty cloud frame_id</text>
+  <text class="small" x="846" y="418">Require cached camera_info</text>
+  <text class="small" x="846" y="440">Select freshest valid YoloFramePair nearest the cloud stamp</text>
+  <text class="small" x="846" y="462">Reject stale detection, stale mask, or stale camera_info</text>
+  <text class="small" x="846" y="484">Build detection_map from person class + score threshold + integer instance id</text>
+
+  <rect class="logic" x="822" y="526" width="410" height="170"/>
+  <text class="box-text" x="846" y="556">3. Resolve transforms</text>
+  <text class="small" x="846" y="584">camera_frame &lt;- cloud_frame via TF lookup</text>
+  <text class="small" x="846" y="606">if TF fails, optionally use latest TF fallback with age gate</text>
+  <text class="small" x="846" y="628">if still failing, optionally use extrinsic fallback</text>
+  <text class="small" x="846" y="650">tracking_frame &lt;- cloud_frame also required</text>
+  <text class="small" x="846" y="672">Without these transforms the cloud is skipped</text>
+
+  <rect class="logic" x="822" y="726" width="410" height="266"/>
+  <text class="box-text" x="846" y="756">4. buildInstanceBuckets()</text>
+  <text class="small" x="846" y="784">Extract xyz points from PointCloud2</text>
+  <text class="small" x="846" y="806">Per point:</text>
+  <text class="small" x="870" y="828">- apply 3D range filter</text>
+  <text class="small" x="870" y="850">- transform point into camera frame</text>
+  <text class="small" x="870" y="872">- reject if behind camera or outside image</text>
+  <text class="small" x="870" y="894">- project by fx, fy, cx, cy</text>
+  <text class="small" x="870" y="916">- read mono16 instance id at projected mask pixel</text>
+  <text class="small" x="870" y="938">- require same instance id to exist in detection_map</text>
+  <text class="small" x="870" y="960">- require projected pixel still inside the 2D bbox</text>
+  <text class="small" x="846" y="982">Accepted points are stored in tracking_frame buckets by instance id</text>
+
+  <rect class="logic" x="822" y="1022" width="410" height="186"/>
+  <text class="box-text" x="846" y="1052">5. finalizeInstanceDetections()</text>
+  <text class="small" x="846" y="1080">Reject buckets with too few points</text>
+  <text class="small" x="846" y="1102">Build percentile box from 10% to 90% per axis</text>
+  <text class="small" x="846" y="1124">If box is too large, refine by keeping near-front planar range band</text>
+  <text class="small" x="846" y="1146">Apply final size gate</text>
+  <text class="small" x="846" y="1168">Score = 0.55 det score + 0.25 support + 0.20 size prior</text>
+  <text class="small" x="846" y="1190">Sort detections by score descending</text>
+
+  <rect class="out" x="1314" y="214" width="268" height="136"/>
+  <text class="box-text" x="1336" y="244">/ped_detection</text>
+  <text class="small" x="1336" y="272">buildDetectionMessage()</text>
+  <text class="small" x="1336" y="294">header = cloud stamp and output frame</text>
+  <text class="small" x="1336" y="316">odometry copied from cache when available</text>
+  <text class="small" x="1336" y="338">per-instance center, size, score</text>
+
+  <rect class="out" x="1314" y="390" width="268" height="136"/>
+  <text class="box-text" x="1336" y="420">/pedestrian_3d_bbox_markers</text>
+  <text class="small" x="1336" y="448">publishDebugMarkers()</text>
+  <text class="small" x="1336" y="470">DELETEALL + cube marker + text marker</text>
+  <text class="small" x="1336" y="492">text shows id and support point count</text>
+  <text class="small" x="1336" y="514">lifetime = 0.2 s</text>
+
+  <rect class="out" x="1314" y="566" width="268" height="192"/>
+  <text class="box-text" x="1336" y="596">Notably absent from this node</text>
+  <text class="small" x="1336" y="624">No clustering stage</text>
+  <text class="small" x="1336" y="646">No tracker state update</text>
+  <text class="small" x="1336" y="668">No image-triggered 3D retrigger</text>
+  <text class="small" x="1336" y="690">No Hungarian matching</text>
+  <text class="small" x="1336" y="712">This node ends at fused 3D detections + markers</text>
+  <text class="small" x="1336" y="734">Tracking is external</text>
+
+  <rect class="out" x="1314" y="798" width="268" height="156"/>
+  <text class="box-text" x="1336" y="828">Methodology summary</text>
+  <text class="small" x="1336" y="856">camera-guided filtering</text>
+  <text class="small" x="1336" y="878">LiDAR-triggered execution</text>
+  <text class="small" x="1336" y="900">mask id + bbox dual gate</text>
+  <text class="small" x="1336" y="922">percentile 3D box with fallback refinement</text>
+
+  <path class="link" d="M 358 514 C 392 514, 402 250, 438 250"/>
+  <path class="link" d="M 358 514 C 392 514, 402 406, 438 406"/>
+  <path class="link" d="M 358 514 C 392 514, 402 834, 438 834"/>
+  <path class="link thin dash" d="M 358 514 C 392 514, 402 976, 438 976"/>
+  <path class="link thin dash" d="M 358 726 C 392 726, 402 610, 438 610"/>
+
+  <path class="link" d="M 590 314 L 590 344"/>
+  <path class="link" d="M 590 470 L 590 500"/>
+  <path class="link thin dash" d="M 590 746 L 590 1062"/>
+
+  <path class="link" d="M 742 610 C 786 610, 790 417, 822 417"/>
+  <path class="link thin dash" d="M 742 834 C 786 834, 790 417, 822 417"/>
+  <path class="link thin dash" d="M 742 976 C 786 976, 790 417, 822 417"/>
+  <path class="link" d="M 742 1148 C 786 1148, 790 245, 822 245"/>
+
+  <path class="link" d="M 1027 308 L 1027 338"/>
+  <path class="link" d="M 1027 496 L 1027 526"/>
+  <path class="link" d="M 1027 696 L 1027 726"/>
+  <path class="link" d="M 1027 992 L 1027 1022"/>
+
+  <path class="link" d="M 1232 1115 C 1270 1115, 1276 282, 1314 282"/>
+  <path class="link thin dash" d="M 1232 1115 C 1270 1115, 1276 458, 1314 458"/>
+  <path class="link thin dash" d="M 1232 612 C 1270 612, 1276 662, 1314 662"/>
+  <path class="link thin dash" d="M 742 1148 C 1270 1148, 1270 876, 1314 876"/>
+
+  <text class="foot" x="48" y="1290">Confirmed from code: only lidarCallback() publishes outputs; detections2d, instance_mask, camera_info, and odom callbacks update queues or caches.</text>
+  <text class="foot" x="48" y="1312">Inference note: this makes the node effectively camera-guided but LiDAR-triggered. That statement is inferred from the callback structure, not from a separate design document.</text>
+</svg>
